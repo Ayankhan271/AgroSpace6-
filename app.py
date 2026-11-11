@@ -2,7 +2,6 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 import pystac_client
-import planetary_computer
 import rasterio
 from rasterio.windows import from_bounds
 from rasterio.warp import transform_bounds
@@ -24,26 +23,29 @@ days_back = st.sidebar.slider("Lookback Window (Days):", 15, 90, 45)
 max_cloud = st.sidebar.slider("Max Cloud Cover (%):", 5, 50, 20)
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Tip:** Click anywhere on the map to see exact farm coordinates!")
+st.sidebar.info("💡 **Tip:** Click anywhere on the satellite map to see exact farm coordinates!")
 
 col_map, col_data = st.columns([1.2, 1])
 
 with col_map:
     st.subheader("🌍 Live Orbital Field Selector")
-    m = folium.Map(location=[lat, lon], zoom_start=14, tiles=None)
-    folium.TileLayer(
+    m = folium.Map(
+        location=[lat, lon],
+        zoom_start=15,
         tiles="https://arcgisonline.com{z}/{y}/{x}",
-        attr="Esri",
-        name="Satellite View"
-    ).add_to(m)
+        attr="Esri World Imagery"
+    )
     
-    bbox = [lon - buffer_deg, lat - buffer_deg, lon + buffer_deg, lat + buffer_deg]
+    min_lon, min_lat = lon - buffer_deg, lat - buffer_deg
+    max_lon, max_lat = lon + buffer_deg, lat + buffer_deg
+    bbox = [min_lon, min_lat, max_lon, max_lat]
+    
     folium.Rectangle(
-        bounds=[[bbox[1], bbox[0]], [bbox[3], bbox[2]]],
+        bounds=[[min_lat, min_lon], [max_lat, max_lon]],
         color="#00FF00",
-        weight=2,
+        weight=3,
         fill=True,
-        fill_opacity=0.15,
+        fill_opacity=0.1,
         tooltip="Target Scan Zone"
     ).add_to(m)
     folium.Marker([lat, lon], tooltip="Field Center").add_to(m)
@@ -57,12 +59,9 @@ with col_map:
 with col_data:
     st.subheader("🧠 Real-Time Spectral & Crop Health Analysis")
     if st.button("🚀 Fetch Live Sentinel-2 Satellite Data", type="primary", use_container_width=True):
-        with st.spinner("Connecting to Microsoft Planetary Computer STAC API..."):
+        with st.spinner("Connecting to ESA Sentinel-2 Open Orbital Catalog..."):
             try:
-                catalog = pystac_client.Client.open(
-                    "https://microsoft.com",
-                    modifier=planetary_computer.sign_inplace,
-                )
+                catalog = pystac_client.Client.open("https://element84.com")
                 end_date = datetime.utcnow()
                 start_date = end_date - timedelta(days=days_back)
                 time_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
@@ -78,14 +77,14 @@ with col_data:
                 if not items:
                     st.warning("No cloud-free satellite pass found. Increase 'Lookback Window' or 'Max Cloud Cover'.")
                 else:
-                    best_item = sorted(items, key=lambda x: x.properties["eo:cloud_cover"])[0]
+                    best_item = sorted(items, key=lambda x: x.properties["eo:cloud_cover"])
                     scene_date = best_item.datetime.strftime("%Y-%m-%d")
                     cloud_pct = best_item.properties["eo:cloud_cover"]
                     
                     st.success(f"✔ Satellite Pass Locked! Date: **{scene_date}** | Cloud Cover: **{cloud_pct:.1f}%**")
 
-                    red_href = best_item.assets["B04"].href
-                    nir_href = best_item.assets["B08"].href
+                    red_href = best_item.assets["red"].href
+                    nir_href = best_item.assets["nir"].href
 
                     with rasterio.open(red_href) as src_red, rasterio.open(nir_href) as src_nir:
                         proj_bbox = transform_bounds("EPSG:4326", src_red.crs, *bbox)
