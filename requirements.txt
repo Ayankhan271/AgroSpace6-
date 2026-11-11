@@ -1,2 +1,8 @@
 streamlit 
 numpy 
+folium 
+streamlit-folium 
+pystac-client 
+planetary-computer 
+rasterio 
+matplotlib
